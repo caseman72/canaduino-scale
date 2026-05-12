@@ -1,0 +1,415 @@
+substitutions:
+  # All values are required at build time — sourced from secrets.h and
+  # injected via upload.sh as `-s` flags. The PLACEHOLDER strings below are
+  # tripwires: if you see them survive into a build, upload.sh didn't run.
+  wifi_ssid:     "PLACEHOLDER"
+  wifi_password: "PLACEHOLDER"
+  mqtt_broker:   "PLACEHOLDER"
+  mqtt_port:     "PLACEHOLDER"
+  mqtt_username: "PLACEHOLDER"
+  mqtt_password: "PLACEHOLDER"
+  ota_password:  "PLACEHOLDER"
+  scale_mac:     "PLACEHOLDER"
+  user_height_m: "PLACEHOLDER"
+  user_age:      "PLACEHOLDER"
+  user_sex:      "PLACEHOLDER"
+
+esphome:
+  name: scale-monitor
+  friendly_name: Scale Monitor
+
+esp32:
+  board: arduino_nano_esp32
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_LOG_COLORS: "n"
+
+wifi:
+  ssid: ${wifi_ssid}
+  password: ${wifi_password}
+  fast_connect: true
+  reboot_timeout: 15min
+
+mqtt:
+  broker: ${mqtt_broker}
+  port: ${mqtt_port}
+  username: ${mqtt_username}
+  password: ${mqtt_password}
+  discovery: true
+  discovery_prefix: homeassistant
+  discovery_unique_id_generator: mac
+  topic_prefix: scale
+  idf_send_async: true
+  log_topic: scale/logs
+  reboot_timeout: 15min
+  on_connect:
+    - logger.log: "MQTT Connected!"
+  on_disconnect:
+    - logger.log: "MQTT Disconnected!"
+
+ota:
+  platform: esphome
+  password: ${ota_password}
+
+logger:
+  level: INFO
+
+globals:
+  # True while a weigh-in capture window is open (armed by the virtual button,
+  # auto-disarms on stable frame OR after 90s timeout).
+  - id: capture_armed
+    type: bool
+    initial_value: "false"
+
+output:
+  # Arduino Nano ESP32 built-in user LED (orange, near USB). Active high.
+  - platform: gpio
+    pin: 48
+    id: status_led_output
+
+light:
+  - platform: binary
+    output: status_led_output
+    id: status_led
+    internal: true
+    effects:
+      - strobe:
+          name: blink
+          colors:
+            - state: true
+              duration: 200ms
+            - state: false
+              duration: 200ms
+
+script:
+  - id: capture_timeout
+    mode: restart
+    then:
+      - delay: 90s
+      - if:
+          condition:
+            lambda: 'return id(capture_armed);'
+          then:
+            - logger.log: "Weigh-in window timed out"
+            - lambda: id(capture_armed) = false;
+            - light.turn_off: status_led
+
+  # Briefly indicate a successful capture: solid on for 3s, then off.
+  - id: capture_done_indicator
+    mode: restart
+    then:
+      - light.turn_on: status_led
+      - delay: 3s
+      - light.turn_off: status_led
+
+button:
+  - platform: template
+    name: "Weigh In"
+    id: btn_weigh_in
+    icon: "mdi:scale-bathroom"
+    on_press:
+      - logger.log: "Weigh-in armed (90s window)"
+      - lambda: id(capture_armed) = true;
+      - light.turn_on:
+          id: status_led
+          effect: blink
+      - script.execute: capture_timeout
+
+# BLE listener: always logs raw frames (cheap, useful for debugging future
+# protocol changes), but only decodes + publishes when a capture is armed.
+esp32_ble_tracker:
+  scan_parameters:
+    active: true
+    interval: 320ms
+    window: 30ms
+  on_ble_advertise:
+    - mac_address: ${scale_mac}
+      then:
+        - lambda: |-
+            std::string hex;
+            char buf[8];
+            for (auto &d : x.get_manufacturer_datas()) {
+              sprintf(buf, "[%04X]", d.uuid.get_uuid().uuid.uuid16);
+              hex += buf;
+              for (auto b : d.data) {
+                sprintf(buf, "%02X", b);
+                hex += buf;
+              }
+            }
+            ESP_LOGI("scale", "rssi=%d mfg=%s", x.get_rssi(), hex.c_str());
+
+            if (!id(capture_armed)) return;
+
+            for (auto &d : x.get_manufacturer_datas()) {
+              auto &data = d.data;
+              if (data.size() < 19) continue;
+              uint8_t status = data[10];
+              // bit 0x80 = final/saved frame, fires exactly once per weigh-in
+              if (!(status & 0x80)) continue;
+              if (data.size() < 19) continue;
+
+              float weight_kg = (uint16_t)(data[12] | (data[13] << 8)) / 100.0f;
+              uint16_t hr = (uint16_t)(data[15] | (data[16] << 8));
+              float impedance = (uint16_t)(data[17] | (data[18] << 8)) / 10.0f;
+
+              // Body-composition equations (Kyle 2001 / Janssen 2000 / Mifflin-St Jeor)
+              const float h_m = ${user_height_m};
+              const float h_cm = h_m * 100.0f;
+              const float age = ${user_age};
+              const int sex = ${user_sex};      // 1 = male, 0 = female
+              const float xc = 0.0f;            // reactance — not measured by consumer BIA scales
+              const float r = impedance > 1.0f ? impedance : 1.0f;  // guard /0
+
+              float bmi = weight_kg / (h_m * h_m);
+              float ht2_r = (h_cm * h_cm) / r;
+              float ffm = -4.104f + 0.518f * ht2_r + 0.231f * weight_kg + 0.130f * xc + 4.229f * sex;
+              float bf_mass = weight_kg - ffm;
+              float bf_pct = (bf_mass / weight_kg) * 100.0f;
+              float tbw_kg = ffm * 0.732f;
+              float tbw_pct = (tbw_kg / weight_kg) * 100.0f;
+              float smm = ht2_r * 0.401f + sex * 3.825f - 0.071f * age + 5.102f;
+              float bmr = 10.0f * weight_kg + 6.25f * h_cm - 5.0f * age + (sex == 1 ? 5.0f : -161.0f);
+              float protein_pct = (ffm * 0.21f) / weight_kg * 100.0f;
+
+              // Visceral Fat Index — heuristic (BMI + BF% + age + SMM ratio + BF/age
+              // penalty). Consumer scales use proprietary algorithms so this will
+              // differ from the Eufy app by a few points. Clamped to 1..20.
+              float vf = 4.0f
+                + (bf_pct - 20.0f) * 0.45f
+                + (bmi - 25.0f) * 0.55f
+                + (age - 40.0f) * 0.12f;
+              const float expected_smm_ratio = sex == 1 ? 0.38f : 0.32f;
+              if ((smm / weight_kg) < expected_smm_ratio) vf += 3.0f;
+              if (bf_pct > 30.0f && age > 50.0f) vf += 4.0f;
+              int visceral_fat = (int)(vf + 0.5f);
+              if (visceral_fat < 1) visceral_fat = 1;
+              if (visceral_fat > 20) visceral_fat = 20;
+
+              id(scale_weight_kg).publish_state(weight_kg);
+              id(scale_weight_lb).publish_state(weight_kg * 2.20462f);
+              id(scale_hr).publish_state(hr);
+              id(scale_impedance).publish_state(impedance);
+              id(scale_bmi).publish_state(bmi);
+              id(scale_ffm).publish_state(ffm);
+              id(scale_bf_pct).publish_state(bf_pct);
+              id(scale_bf_mass).publish_state(bf_mass);
+              id(scale_tbw_kg).publish_state(tbw_kg);
+              id(scale_tbw_pct).publish_state(tbw_pct);
+              id(scale_smm).publish_state(smm);
+              id(scale_bmr).publish_state(bmr);
+              id(scale_protein_pct).publish_state(protein_pct);
+              id(scale_visceral_fat).publish_state(visceral_fat);
+              const float kg2lb = 2.20462f;
+              id(scale_ffm_lb).publish_state(ffm * kg2lb);
+              id(scale_bf_mass_lb).publish_state(bf_mass * kg2lb);
+              id(scale_tbw_lb).publish_state(tbw_kg * kg2lb);
+              id(scale_smm_lb).publish_state(smm * kg2lb);
+
+              ESP_LOGI("scale", "captured: %.2f kg (%.1f lb) HR=%d Z=%.1fohm BMI=%.1f FFM=%.1fkg BF=%.1f%% TBW=%.1f%% SMM=%.1fkg BMR=%.0f VF=%d",
+                       weight_kg, weight_kg * 2.20462f, hr, impedance, bmi, ffm, bf_pct, tbw_pct, smm, bmr, visceral_fat);
+
+              id(capture_armed) = false;
+              id(capture_done_indicator).execute();
+              break;
+            }
+
+# Canaduino DOs — kept defined as internal so pins are driven LOW (not floating).
+# REL1 = D2 = GPIO 5.
+switch:
+  - platform: gpio
+    pin: 5
+    name: "REL1 (unused)"
+    id: rel1
+    internal: true
+    restore_mode: ALWAYS_OFF
+
+  # Drive Nano ESP32 onboard RGB-red (GPIO 46) and RGB-blue (GPIO 45) fully OFF.
+  # Both are active-low. Out of the box ESP-IDF leaves them in high-Z and the
+  # internal pull-up leaks just enough current to half-light them. Configuring
+  # as inverted outputs in ALWAYS_OFF makes them sit at logic high → LED off.
+  # Green stays untouched (GPIO 0 is the strapping pin — driving it can prevent
+  # boot — and the user wants green as a power indicator anyway).
+  - platform: gpio
+    pin:
+      number: 46
+      inverted: true
+    name: "RGB Red (off)"
+    id: rgb_red
+    internal: true
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    pin:
+      number: 45
+      inverted: true
+    name: "RGB Blue (off)"
+    id: rgb_blue
+    internal: true
+    restore_mode: ALWAYS_OFF
+
+sensor:
+  # 67s: prime, co-prime with revel (60s) and zamp (61s) — see
+  # feedback_sensor_interval_skew memory for rationale.
+  - platform: wifi_signal
+    name: "WiFi RSSI"
+    id: wifi_rssi
+    update_interval: 67s
+    icon: "mdi:wifi"
+
+  # Scale readings — only publish when a capture is armed and a final frame
+  # (status & 0x80) is decoded. Values persist between weigh-ins.
+  - platform: template
+    name: "Weight"
+    id: scale_weight_kg
+    unit_of_measurement: "kg"
+    accuracy_decimals: 2
+    device_class: weight
+    state_class: measurement
+    icon: "mdi:scale-bathroom"
+
+  - platform: template
+    name: "Weight (lb)"
+    id: scale_weight_lb
+    unit_of_measurement: "lb"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:scale-bathroom"
+
+  - platform: template
+    name: "Heart Rate"
+    id: scale_hr
+    unit_of_measurement: "BPM"
+    accuracy_decimals: 0
+    icon: "mdi:heart-pulse"
+
+  - platform: template
+    name: "Impedance"
+    id: scale_impedance
+    unit_of_measurement: "Ω"
+    accuracy_decimals: 1
+    icon: "mdi:omega"
+
+  - platform: template
+    name: "BMI"
+    id: scale_bmi
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:human"
+
+  # Derived body composition. All depend on impedance + user profile substitutions.
+  - platform: template
+    name: "Fat-Free Mass"
+    id: scale_ffm
+    unit_of_measurement: "kg"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:weight-lifter"
+
+  - platform: template
+    name: "Fat-Free Mass (lb)"
+    id: scale_ffm_lb
+    unit_of_measurement: "lb"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:weight-lifter"
+
+  - platform: template
+    name: "Body Fat"
+    id: scale_bf_pct
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:percent"
+
+  - platform: template
+    name: "Body Fat Mass"
+    id: scale_bf_mass
+    unit_of_measurement: "kg"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:scale-bathroom"
+
+  - platform: template
+    name: "Body Fat Mass (lb)"
+    id: scale_bf_mass_lb
+    unit_of_measurement: "lb"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:scale-bathroom"
+
+  - platform: template
+    name: "Total Body Water"
+    id: scale_tbw_kg
+    unit_of_measurement: "kg"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:water"
+
+  - platform: template
+    name: "Total Body Water (lb)"
+    id: scale_tbw_lb
+    unit_of_measurement: "lb"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:water"
+
+  - platform: template
+    name: "Total Body Water Percent"
+    id: scale_tbw_pct
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:water-percent"
+
+  - platform: template
+    name: "Skeletal Muscle Mass"
+    id: scale_smm
+    unit_of_measurement: "kg"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:arm-flex"
+
+  - platform: template
+    name: "Skeletal Muscle Mass (lb)"
+    id: scale_smm_lb
+    unit_of_measurement: "lb"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:arm-flex"
+
+  - platform: template
+    name: "BMR"
+    id: scale_bmr
+    unit_of_measurement: "kcal"
+    accuracy_decimals: 0
+    state_class: measurement
+    icon: "mdi:fire"
+
+  - platform: template
+    name: "Protein"
+    id: scale_protein_pct
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    state_class: measurement
+    icon: "mdi:food-steak"
+
+  - platform: template
+    name: "Visceral Fat Index"
+    id: scale_visceral_fat
+    accuracy_decimals: 0
+    state_class: measurement
+    icon: "mdi:stomach"
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+      id: wifi_ip
+      icon: "mdi:ip-network"
+
+  - platform: wifi_info
+    ssid:
+      name: "WiFi Network"
+      id: wifi_network
+      icon: "mdi:wifi-cog"

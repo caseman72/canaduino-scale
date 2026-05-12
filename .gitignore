@@ -1,0 +1,27 @@
+# Secrets (contains credentials)
+secrets.h
+
+# ESPHome build artifacts
+.esphome/
+
+# RCS version control files
+**/.rcs/
+
+# Claude Code
+**/.claude/
+
+# macOS
+.DS_Store
+
+# Backups & editor scratch
+*.bak.*
+*.swp
+*.swo
+*~
+
+# Screenshots and reference images — kept locally for context, never committed
+# (may contain personal data like body composition readings).
+*.jpg
+*.jpeg
+*.png
+*.heic
