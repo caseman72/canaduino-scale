@@ -96,12 +96,30 @@ script:
             - light.turn_off: status_led
 
   # Briefly indicate a successful capture: solid on for 3s, then off.
+  # Explicit "effect: none" ensures we override any active blink.
   - id: capture_done_indicator
     mode: restart
     then:
-      - light.turn_on: status_led
+      - light.turn_on:
+          id: status_led
+          effect: none
       - delay: 3s
       - light.turn_off: status_led
+
+  # After we see the first 0xA5 (weight saved) without HR, give the scale
+  # 30 s of grace to broadcast a follow-up frame with HR populated. Weight +
+  # body comp are already published; this grace window only matters for HR.
+  - id: hr_grace_period
+    mode: restart
+    then:
+      - delay: 30s
+      - if:
+          condition:
+            lambda: 'return id(capture_armed);'
+          then:
+            - logger.log: "HR grace expired — disarming with no HR update"
+            - lambda: id(capture_armed) = false;
+            - script.execute: capture_done_indicator
 
 button:
   - platform: template
@@ -186,9 +204,17 @@ esp32_ble_tracker:
               if (visceral_fat < 1) visceral_fat = 1;
               if (visceral_fat > 20) visceral_fat = 20;
 
+              // HR is gated independently. The scale doesn't always get a
+              // heartbeat sample (poor electrode contact → bit 0x80 in
+              // data[11] stays clear and HR bytes stay zero). When that
+              // happens we publish weight + body comp anyway and just leave
+              // HR at its previous value in HA, so a missed-HR weigh-in
+              // doesn't tank the HR trend.
+              bool hr_valid = (data[11] & 0x80) && hr > 0;
+
               id(scale_weight_kg).publish_state(weight_kg);
               id(scale_weight_lb).publish_state(weight_kg * 2.20462f);
-              id(scale_hr).publish_state(hr);
+              if (hr_valid) id(scale_hr).publish_state(hr);
               id(scale_impedance).publish_state(impedance);
               id(scale_bmi).publish_state(bmi);
               id(scale_ffm).publish_state(ffm);
@@ -206,11 +232,20 @@ esp32_ble_tracker:
               id(scale_tbw_lb).publish_state(tbw_kg * kg2lb);
               id(scale_smm_lb).publish_state(smm * kg2lb);
 
-              ESP_LOGI("scale", "captured: %.2f kg (%.1f lb) HR=%d Z=%.1fohm BMI=%.1f FFM=%.1fkg BF=%.1f%% TBW=%.1f%% SMM=%.1fkg BMR=%.0f VF=%d",
-                       weight_kg, weight_kg * 2.20462f, hr, impedance, bmi, ffm, bf_pct, tbw_pct, smm, bmr, visceral_fat);
+              ESP_LOGI("scale", "captured: %.2f kg (%.1f lb) HR=%d%s Z=%.1fohm BMI=%.1f FFM=%.1fkg BF=%.1f%% TBW=%.1f%% SMM=%.1fkg BMR=%.0f VF=%d",
+                       weight_kg, weight_kg * 2.20462f, hr, hr_valid ? "" : "(skipped)", impedance, bmi, ffm, bf_pct, tbw_pct, smm, bmr, visceral_fat);
 
-              id(capture_armed) = false;
-              id(capture_done_indicator).execute();
+              if (hr_valid) {
+                // Full capture in hand — disarm immediately.
+                id(capture_armed) = false;
+                id(capture_done_indicator).execute();
+              } else {
+                // Weight + body comp published; HR still pending. Stay armed
+                // and start (or restart) the 30s HR grace timer. Subsequent
+                // 0xA5 frames in the same session can still publish HR if it
+                // converges later.
+                id(hr_grace_period).execute();
+              }
               break;
             }
 
