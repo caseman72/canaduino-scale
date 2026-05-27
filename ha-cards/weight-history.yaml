@@ -1,0 +1,36 @@
+# Trigger-based template sensor that accumulates an exact, unaggregated list
+# of [epoch_ms, weight_lb] pairs — one per weigh-in — for apexcharts-card's
+# data_generator. Pairs are pre-stored in [ms, value] form so the card can
+# `return entity.attributes.points;` with no transform.
+#
+# - this.attributes lets the sensor read + extend its own previous list.
+# - Trigger-based sensors restore state + attributes across restarts (HA 2023.4+),
+#   so the list persists.
+# - [-365:] caps it at the most recent year of readings.
+#
+# Install: paste under `template:` in configuration.yaml (or
+#   template: !include ha-cards/weight-history.yaml), then restart HA.
+#
+# Recommended: keep the recorder lean — the attribute restores from the
+# restore-state file, so it doesn't need to be logged on every change:
+#   recorder:
+#     exclude:
+#       entities:
+#         - sensor.scale_history_weight_lb
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_weight_lb
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale History Weight (lb)"
+      unique_id: scale_history_weight_lb
+      unit_of_measurement: lb
+      state: "{{ trigger.to_state.state }}"
+      attributes:
+        points: >
+          {% set prev = this.attributes.get('points', []) %}
+          {% set point = [(trigger.to_state.last_changed.timestamp() * 1000) | int,
+                          trigger.to_state.state | float] %}
+          {{ (prev + [point])[-365:] }}

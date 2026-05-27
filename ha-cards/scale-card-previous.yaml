@@ -1,0 +1,146 @@
+# Eufy Smart Scale — PREVIOUS Reading Card
+# Requires: custom:button-card + the sensors defined in previous-readings.yaml
+#
+# Same layout as scale-card.yaml but reads sensor.scale_previous_* entities,
+# which are snapshots of the value that was on the scale BEFORE the most
+# recent weigh-in. The "Last" tile shows how long ago that previous reading
+# was captured.
+
+type: grid
+columns: 1
+square: false
+grid_options:
+  columns: full
+  rows: auto
+cards:
+  - type: heading
+    heading: Previous Reading
+    heading_style: subtitle
+  - type: custom:button-card
+    entity: sensor.scale_previous_weight_lb
+    show_name: false
+    show_icon: false
+    show_state: false
+    styles:
+      card:
+        - background: "linear-gradient(145deg, #2a2a2a, #1a1a1a)"
+        - border-radius: 12px
+        - padding: 20px
+        - box-shadow: 0 2px 8px rgba(0,0,0,0.3)
+      grid:
+        - grid-template-areas: "\"hero\" \"row1\" \"row2\" \"row3\" \"row4\""
+        - grid-template-rows: auto auto auto auto auto
+    custom_fields:
+      hero: |
+        [[[
+          const weight = states['sensor.scale_previous_weight_lb'] ? parseFloat(states['sensor.scale_previous_weight_lb'].state).toFixed(1) : '--';
+          const bmi    = states['sensor.scale_previous_bmi']       ? parseFloat(states['sensor.scale_previous_bmi'].state).toFixed(1)       : '--';
+          return `
+            <div style="display:grid;grid-template-columns:2fr 1fr;align-items:center;padding:4px 4px 20px;border-bottom:1px solid #333;">
+              <div style="text-align:left;">
+                <div style="color:#888;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;">Prev Weight</div>
+                <div style="color:#888;font-size:56px;font-weight:bold;line-height:1;">${weight}<span style="color:#666;font-size:22px;font-weight:normal;margin-left:8px;">lb</span></div>
+              </div>
+              <div style="text-align:right;">
+                <div style="color:#888;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;">Prev BMI</div>
+                <div style="color:#ccc;font-size:36px;font-weight:bold;line-height:1;">${bmi}</div>
+              </div>
+            </div>
+          `;
+        ]]]
+      row1: |
+        [[[
+          const bfPct  = states['sensor.scale_previous_body_fat']         ? parseFloat(states['sensor.scale_previous_body_fat'].state).toFixed(1)         : '--';
+          const bfMass = states['sensor.scale_previous_body_fat_mass_lb'] ? parseFloat(states['sensor.scale_previous_body_fat_mass_lb'].state).toFixed(1) : '--';
+          const ffm    = states['sensor.scale_previous_fat_free_mass_lb'] ? parseFloat(states['sensor.scale_previous_fat_free_mass_lb'].state).toFixed(1) : '--';
+          return `
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;padding:12px 0;border-bottom:1px solid #333;">
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Body Fat</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${bfPct}<span style="color:#666;font-size:12px;font-weight:normal;">%</span></div>
+              </div>
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Fat Mass</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${bfMass}<span style="color:#666;font-size:12px;font-weight:normal;"> lb</span></div>
+              </div>
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Fat-Free</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${ffm}<span style="color:#666;font-size:12px;font-weight:normal;"> lb</span></div>
+              </div>
+            </div>
+          `;
+        ]]]
+      row2: |
+        [[[
+          const smm    = states['sensor.scale_previous_skeletal_muscle_mass_lb']  ? parseFloat(states['sensor.scale_previous_skeletal_muscle_mass_lb'].state).toFixed(1)  : '--';
+          const tbwLb  = states['sensor.scale_previous_total_body_water_lb']      ? parseFloat(states['sensor.scale_previous_total_body_water_lb'].state).toFixed(1)      : '--';
+          const tbwPct = states['sensor.scale_previous_total_body_water_percent'] ? parseFloat(states['sensor.scale_previous_total_body_water_percent'].state).toFixed(1) : '--';
+          return `
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;padding:12px 0;border-bottom:1px solid #333;">
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Muscle</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${smm}<span style="color:#666;font-size:12px;font-weight:normal;"> lb</span></div>
+              </div>
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Water</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${tbwLb}<span style="color:#666;font-size:12px;font-weight:normal;"> lb</span></div>
+              </div>
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Water %</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${tbwPct}<span style="color:#666;font-size:12px;font-weight:normal;">%</span></div>
+              </div>
+            </div>
+          `;
+        ]]]
+      row3: |
+        [[[
+          const vfi  = states['sensor.scale_previous_visceral_fat_index'] ? parseFloat(states['sensor.scale_previous_visceral_fat_index'].state).toFixed(0) : '--';
+          const prot = states['sensor.scale_previous_protein']            ? parseFloat(states['sensor.scale_previous_protein'].state).toFixed(1)            : '--';
+          const bmr  = states['sensor.scale_previous_bmr']                ? parseFloat(states['sensor.scale_previous_bmr'].state).toFixed(0)                : '--';
+          return `
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;padding:12px 0;border-bottom:1px solid #333;">
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Visceral</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${vfi}</div>
+              </div>
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Protein</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${prot}<span style="color:#666;font-size:12px;font-weight:normal;">%</span></div>
+              </div>
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">BMR</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${bmr}<span style="color:#666;font-size:12px;font-weight:normal;"> kcal</span></div>
+              </div>
+            </div>
+          `;
+        ]]]
+      row4: |
+        [[[
+          const hr   = states['sensor.scale_previous_heart_rate'] ? parseFloat(states['sensor.scale_previous_heart_rate'].state).toFixed(0) : '--';
+          const imp  = states['sensor.scale_previous_impedance']  ? parseFloat(states['sensor.scale_previous_impedance'].state).toFixed(0)  : '--';
+          const wt   = states['sensor.scale_previous_weight_lb']  ? states['sensor.scale_previous_weight_lb'].last_changed : null;
+          let ago = '--';
+          if (wt) {
+            const secs = Math.round((Date.now() - new Date(wt).getTime()) / 1000);
+            if      (secs < 60)        ago = `${secs}s`;
+            else if (secs < 3600)      ago = `${Math.floor(secs/60)}m`;
+            else if (secs < 86400)     ago = `${Math.floor(secs/3600)}h`;
+            else                       ago = `${Math.floor(secs/86400)}d`;
+          }
+          return `
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;padding:12px 0 4px;">
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Heart Rate</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${hr}<span style="color:#666;font-size:12px;font-weight:normal;"> bpm</span></div>
+              </div>
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Impedance</div>
+                <div style="color:#888;font-size:20px;font-weight:bold;">${imp}<span style="color:#666;font-size:12px;font-weight:normal;"> Ω</span></div>
+              </div>
+              <div>
+                <div style="color:#888;font-size:11px;margin-bottom:3px;">Captured</div>
+                <div style="color:#ccc;font-size:20px;font-weight:bold;">${ago}<span style="color:#666;font-size:12px;font-weight:normal;"> ago</span></div>
+              </div>
+            </div>
+          `;
+        ]]]

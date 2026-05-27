@@ -316,6 +316,7 @@ sensor:
     id: scale_hr
     unit_of_measurement: "BPM"
     accuracy_decimals: 0
+    state_class: measurement
     icon: "mdi:heart-pulse"
 
   - platform: template
@@ -323,6 +324,7 @@ sensor:
     id: scale_impedance
     unit_of_measurement: "Ω"
     accuracy_decimals: 1
+    state_class: measurement
     icon: "mdi:omega"
 
   - platform: template

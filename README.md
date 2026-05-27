@@ -130,11 +130,31 @@ either (a) per-user firmware builds with different `USER_*` profiles, or
 (b) an HA template helper that picks the active user before re-computing
 derived metrics from the raw weight + impedance.
 
+## Dashboard cards (Home Assistant)
+
+Optional Lovelace cards and helpers live in `ha-cards/`. The cards need
+`custom:button-card` and `custom:apexcharts-card` (both via HACS); the two
+`template:` files are pasted into `configuration.yaml` (reload Template
+Entities after).
+
+| File | Type | Purpose |
+|---|---|---|
+| `scale-card.yaml` | Lovelace | Body-composition card (Beaver Orange theme) |
+| `scale-card-previous.yaml` | Lovelace | Same layout showing the previous reading |
+| `scale-weight-chart.yaml` | Lovelace | Weight trend (apexcharts, reads the `points` attribute) |
+| `previous-readings.yaml` | `template:` | Trigger sensors snapshotting each metric's prior value |
+| `weight-history.yaml` | `template:` | Trigger sensor accumulating `[epoch_ms, lb]` pairs for the trend |
+
+`weight-history.yaml` relies on Heart Rate / Impedance / the body-comp
+sensors carrying `state_class: measurement`, which also lets HA keep
+long-term statistics for them.
+
 ## Files
 
 | File | Purpose |
 |---|---|
 | `scale-monitor.yaml` | ESPHome config (BLE listener, decoder, body-comp math, LED state machine) |
+| `ha-cards/` | HA Lovelace cards + template-sensor helpers (see "Dashboard cards") |
 | `secrets.example.h` | template for `secrets.h` |
 | `secrets.h` | actual values — **gitignored** |
 | `upload.sh` | OTA helper that injects secrets as ESPHome `-s` substitutions |

@@ -1,0 +1,150 @@
+# Trigger-based template sensors that snapshot the PREVIOUS reading of each
+# scale value whenever a new measurement arrives.
+#
+# Each sensor triggers on its own underlying entity, so `trigger.from_state`
+# is the value that was on screen just before this measurement.
+#
+# Install: paste this into configuration.yaml under `template:`, or
+#   template: !include ha-cards/previous-readings.yaml
+# Then restart HA.
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_weight_lb
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Weight lb"
+      unique_id: scale_previous_weight_lb
+      unit_of_measurement: lb
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_bmi
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous BMI"
+      unique_id: scale_previous_bmi
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_body_fat
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Body Fat"
+      unique_id: scale_previous_body_fat
+      unit_of_measurement: "%"
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_body_fat_mass_lb
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Body Fat Mass lb"
+      unique_id: scale_previous_body_fat_mass_lb
+      unit_of_measurement: lb
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_fat_free_mass_lb
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Fat Free Mass lb"
+      unique_id: scale_previous_fat_free_mass_lb
+      unit_of_measurement: lb
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_skeletal_muscle_mass_lb
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Skeletal Muscle Mass lb"
+      unique_id: scale_previous_skeletal_muscle_mass_lb
+      unit_of_measurement: lb
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_total_body_water_lb
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Total Body Water lb"
+      unique_id: scale_previous_total_body_water_lb
+      unit_of_measurement: lb
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_total_body_water_percent
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Total Body Water Percent"
+      unique_id: scale_previous_total_body_water_percent
+      unit_of_measurement: "%"
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_visceral_fat_index
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Visceral Fat Index"
+      unique_id: scale_previous_visceral_fat_index
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_protein
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Protein"
+      unique_id: scale_previous_protein
+      unit_of_measurement: "%"
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_bmr
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous BMR"
+      unique_id: scale_previous_bmr
+      unit_of_measurement: kcal
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_heart_rate
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Heart Rate"
+      unique_id: scale_previous_heart_rate
+      unit_of_measurement: bpm
+      state: "{{ trigger.from_state.state }}"
+
+- trigger:
+    - platform: state
+      entity_id: sensor.scale_monitor_impedance
+      not_to: ["unknown", "unavailable", "none"]
+      not_from: ["unknown", "unavailable", "none"]
+  sensor:
+    - name: "Scale Previous Impedance"
+      unique_id: scale_previous_impedance
+      unit_of_measurement: "Ω"
+      state: "{{ trigger.from_state.state }}"

@@ -1,0 +1,24 @@
+# Weight trend chart from the self-owned point list.
+# Requires: custom:apexcharts-card (HACS) + sensor.scale_history_weight_lb
+#   (defined in weight-history.yaml).
+#
+# Points are stored pre-formatted as [epoch_ms, weight_lb], so data_generator
+# just returns them as-is.
+
+type: custom:apexcharts-card
+graph_span: 90d
+header:
+  show: true
+  title: Weight Trend
+  show_states: false
+series:
+  - entity: sensor.scale_history_weight_lb
+    name: Weight
+    unit: lb
+    type: line
+    curve: smooth
+    color: "#D73F09"
+    data_generator: |
+      return entity.attributes.points
+        // exclude heavy weigh-in (late, fully clothed): 2026-05-26 17:25:40 PDT
+        .filter(w => w[0] !== 1779841540536);
