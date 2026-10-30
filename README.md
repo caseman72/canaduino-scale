@@ -34,6 +34,9 @@ Auto-discovered as a "Scale Monitor" device with 18 entities:
 
 Plus three diagnostics: WiFi RSSI, IP address, SSID.
 
+Plus desk presence (WiFi CSI, see below): Desk Presence, Desk Motion,
+CSI Motion Level, and Presence / Motion Threshold numbers.
+
 Derived values are estimates from population-average equations. They will
 differ from the Eufy app (proprietary tuning) by 1–3 percentage points;
 trend over time matters more than absolute calibration.
@@ -67,7 +70,29 @@ The status byte progresses through the weigh-in lifecycle:
 `0x35` (idle) → `0x01` (settling) → `0x15` → `0x25` (stable+impedance) →
 `0x65` (impedance valid) → `0xA5` (final/saved, capture trigger).
 
-## Hardware
+## Desk presence (WiFi CSI)
+
+The board sits on the desk, so it also works as a passive WiFi radar:
+`wifi_csi.h` reads Channel State Information (per-subcarrier amplitude) from
+every frame the AP sends, and a person moving near the TX→RX path changes the
+multipath. The pipeline is WiFi-Sense's CSI path (moving average → variance →
+integrator → EMA → on/off hysteresis), which itself builds on the
+MotionDetector RSSI algorithm. Only frames from the connected AP's BSSID are
+used. An idle station gets almost no CSI-bearing frames (beacons are legacy
+DSSS, ~0.3 frames/s measured), so the firmware pings the gateway every
+100 ms; each echo reply yields a CSI frame (~10/s).
+
+Tuning: watch **CSI Motion Level** with the desk empty versus occupied, then
+set **Presence Threshold** just above the empty baseline and **Motion
+Threshold** above the level you see while sitting still. Both thresholds are
+HA number entities and are restored across reboots.
+
+Caveats: CSI picks up *movement*. Someone sitting very still can drop below
+the threshold (the 15-tick off-hysteresis covers short pauses). The board is
+mains-powered, so WiFi runs with `power_save_mode: none` (the radio hears
+every AP frame, not just DTIM beacons) at max TX power (20.5 dB). The radio
+is still time-shared with the BLE scan (30 ms of every 320 ms).
+
 
 - **Controller**: Canaduino PLC + Arduino Nano ESP32 (ESP32-S3)
 - **Scale**: Eufy T9130 (and probably the rest of the Eufy bathroom-scale
@@ -140,9 +165,10 @@ Entities after).
 | File | Type | Purpose |
 |---|---|---|
 | `scale-card.yaml` | Lovelace | Body-composition card (Beaver Orange theme) |
+| `ha-current-weight-dashboard.yaml` | Lovelace | Full dashboard: card with previous reading under each value, Weigh In button, weight trend |
 | `scale-card-previous.yaml` | Lovelace | Same layout showing the previous reading |
 | `scale-weight-chart.yaml` | Lovelace | Weight trend (apexcharts, reads the `points` attribute) |
-| `previous-readings.yaml` | `template:` | Trigger sensors snapshotting each metric's prior value |
+| `previous-readings.yaml` | `template:` | Trigger sensors snapshotting each metric's prior value (also on weigh-ins where it didn't change) |
 | `weight-history.yaml` | `template:` | Trigger sensor accumulating `[epoch_ms, lb]` pairs for the trend |
 
 `weight-history.yaml` relies on Heart Rate / Impedance / the body-comp
@@ -154,6 +180,7 @@ long-term statistics for them.
 | File | Purpose |
 |---|---|
 | `scale-monitor.yaml` | ESPHome config (BLE listener, decoder, body-comp math, LED state machine) |
+| `wifi_csi.h` | WiFi CSI presence/motion detector (included by `scale-monitor.yaml`) |
 | `ha-cards/` | HA Lovelace cards + template-sensor helpers (see "Dashboard cards") |
 | `secrets.example.h` | template for `secrets.h` |
 | `secrets.h` | actual values — **gitignored** |

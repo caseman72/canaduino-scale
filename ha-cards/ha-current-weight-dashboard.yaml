@@ -1,0 +1,142 @@
+views:
+  - type: sections
+    sections:
+      - type: grid
+        cards:
+          - type: vertical-stack
+            cards:
+              - type: heading
+                heading: Body Composition
+                heading_style: subtitle
+                icon: mdi:human-male
+              - type: custom:button-card
+                entity: sensor.scale_monitor_weight_lb
+                show_name: false
+                show_icon: false
+                show_state: false
+                styles:
+                  card:
+                    - background: 'linear-gradient(145deg, #2a2a2a, #1a1a1a)'
+                    - border-radius: 12px
+                    - padding: 20px
+                    - box-shadow: 0 2px 8px rgba(0,0,0,0.3)
+                  grid:
+                    - grid-template-areas: '"hero" "rows"'
+                    - grid-template-rows: auto auto
+                custom_fields:
+                  hero: |
+                    [[[
+                      const val = (id, d) => states[id] && !isNaN(parseFloat(states[id].state)) ? parseFloat(states[id].state).toFixed(d) : '--';
+                      const weight = val('sensor.scale_monitor_weight_lb', 1);
+                      const bmi    = val('sensor.scale_monitor_bmi', 1);
+                      // Fall back to the weight history's second-to-last point.
+                      const pts = states['sensor.scale_history_weight_lb']?.attributes?.points || [];
+                      let pWeight = val('sensor.scale_previous_weight_lb', 1);
+                      if (pWeight === '--' && pts.length >= 2) pWeight = pts[pts.length - 2][1].toFixed(1);
+                      const pBmi    = val('sensor.scale_previous_bmi', 1);
+                      return `
+                        <div style="display:grid;grid-template-columns:2fr 1fr;align-items:center;padding:4px 4px 20px;border-bottom:1px solid #333;">
+                          <div style="text-align:left;">
+                            <div style="color:#888;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;">Weight</div>
+                            <div style="color:#D73F09;font-size:56px;font-weight:bold;line-height:1;">${weight}<span style="color:#888;font-size:22px;font-weight:normal;margin-left:8px;">lb</span></div>
+                            <div style="color:#666;font-size:14px;margin-top:6px;">${pWeight} lb</div>
+                          </div>
+                          <div style="text-align:right;">
+                            <div style="color:#888;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:4px;">BMI</div>
+                            <div style="color:#fff;font-size:36px;font-weight:bold;line-height:1;">${bmi}</div>
+                            <div style="color:#666;font-size:14px;margin-top:6px;">${pBmi}</div>
+                          </div>
+                        </div>
+                      `;
+                    ]]]
+                  rows: |
+                    [[[
+                      const val = (id, d) => states[id] && !isNaN(parseFloat(states[id].state)) ? parseFloat(states[id].state).toFixed(d) : '--';
+                      const ago = (t) => {
+                        if (!t) return '--';
+                        const secs = Math.round((Date.now() - new Date(t).getTime()) / 1000);
+                        if      (secs < 60)    return `${secs}s`;
+                        else if (secs < 3600)  return `${Math.floor(secs/60)}m`;
+                        else if (secs < 86400) return `${Math.floor(secs/3600)}h`;
+                        else                   return `${Math.floor(secs/86400)}d`;
+                      };
+                      // Weigh-in times from the weight history (last / second-to-last point).
+                      // The weight sensor's last_changed also moves on device reboots.
+                      const pts = states['sensor.scale_history_weight_lb']?.attributes?.points || [];
+                      const wt  = pts.length >= 1 ? pts[pts.length - 1][0] : states['sensor.scale_monitor_weight_lb']?.last_changed;
+                      // [label, current, previous, unit, color]
+                      const rows = [
+                        [['Body Fat',   val('sensor.scale_monitor_body_fat', 1),                  val('sensor.scale_previous_body_fat', 1),                  '%'],
+                         ['Fat Mass',   val('sensor.scale_monitor_body_fat_mass_lb', 1),          val('sensor.scale_previous_body_fat_mass_lb', 1),          ' lb'],
+                         ['Fat-Free',   val('sensor.scale_monitor_fat_free_mass_lb', 1),          val('sensor.scale_previous_fat_free_mass_lb', 1),          ' lb']],
+                        [['Muscle',     val('sensor.scale_monitor_skeletal_muscle_mass_lb', 1),   val('sensor.scale_previous_skeletal_muscle_mass_lb', 1),   ' lb'],
+                         ['Water',      val('sensor.scale_monitor_total_body_water_lb', 1),       val('sensor.scale_previous_total_body_water_lb', 1),       ' lb'],
+                         ['Water %',    val('sensor.scale_monitor_total_body_water_percent', 1),  val('sensor.scale_previous_total_body_water_percent', 1),  '%']],
+                        [['Visceral',   val('sensor.scale_monitor_visceral_fat_index', 0),        val('sensor.scale_previous_visceral_fat_index', 0),        ''],
+                         ['Protein',    val('sensor.scale_monitor_protein', 1),                   val('sensor.scale_previous_protein', 1),                   '%'],
+                         ['BMR',        val('sensor.scale_monitor_bmr', 0),                       val('sensor.scale_previous_bmr', 0),                       ' kcal']],
+                        [['Heart Rate', val('sensor.scale_monitor_heart_rate', 0),                val('sensor.scale_previous_heart_rate', 0),                ' bpm'],
+                         ['Impedance',  val('sensor.scale_monitor_impedance', 0),                 val('sensor.scale_previous_impedance', 0),                 ' Ω'],
+                         ['Last',       ago(wt),                                                  ago(pts.length >= 2 ? pts[pts.length - 2][0] : null),      ' ago', '#fff']],
+                      ];
+                      const cell = ([label, cur, prev, unit, color = '#D73F09']) => `
+                        <div>
+                          <div style="color:#888;font-size:11px;margin-bottom:3px;">${label}</div>
+                          <div style="color:${color};font-size:20px;font-weight:bold;">${cur}<span style="color:#888;font-size:12px;font-weight:normal;">${unit}</span></div>
+                          <div style="color:#666;font-size:12px;margin-top:2px;">${prev}<span style="font-size:10px;">${unit}</span></div>
+                        </div>`;
+                      return rows.map((r, i) => `
+                        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;text-align:center;padding:${i === rows.length - 1 ? '12px 0 4px' : '12px 0'};${i === rows.length - 1 ? '' : 'border-bottom:1px solid #333;'}">
+                          ${r.map(cell).join('')}
+                        </div>`).join('');
+                    ]]]
+              - type: custom:button-card
+                entity: button.scale_monitor_weigh_in
+                name: Weigh In
+                icon: mdi:scale-bathroom
+                tap_action:
+                  action: call-service
+                  service: button.press
+                  service_data:
+                    entity_id: button.scale_monitor_weigh_in
+                styles:
+                  card:
+                    - background: 'linear-gradient(145deg, #D73F09, #A02E07)'
+                    - border-radius: 12px
+                    - padding: 16px
+                    - box-shadow: 0 2px 8px rgba(0,0,0,0.3)
+                    - border: none
+                  name:
+                    - color: '#fff'
+                    - font-size: 18px
+                    - font-weight: bold
+                    - letter-spacing: 1.5px
+                    - text-transform: uppercase
+                  icon:
+                    - color: '#fff'
+                    - width: 32px
+          - type: heading
+            icon: ''
+            heading_style: title
+          - type: heading
+            icon: mdi:weight-pound
+            heading: Weight Trend
+            heading_style: subtitle
+          - type: custom:apexcharts-card
+            graph_span: 14d
+            header:
+              show: true
+              title: Weight
+              show_states: false
+            series:
+              - entity: sensor.scale_history_weight_lb
+                name: Weight
+                unit: lb
+                type: line
+                curve: smooth
+                color: '#D73F09'
+                data_generator: |
+                  // console.log(entity.attributes.points);
+                  return entity.attributes.points
+                    // remove heavy weighIn: late, fully clothed, etc
+                    .filter(w => w[0] !== 1779841540536);

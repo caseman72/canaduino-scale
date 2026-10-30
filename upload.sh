@@ -47,6 +47,8 @@ USER_SEX=$(parse_secret USER_SEX)
 
 CONFIG_NAME="${CONFIG%.yaml}"
 FIRMWARE="$SCRIPT_DIR/.esphome/build/$CONFIG_NAME/.pioenvs/$CONFIG_NAME/firmware.ota.bin"
+# ESPHome 2026.x native ESP-IDF builds put it under build/ instead.
+NATIVE_FIRMWARE="$SCRIPT_DIR/.esphome/build/$CONFIG_NAME/build/firmware.ota.bin"
 
 cd "$SCRIPT_DIR"
 
@@ -65,6 +67,7 @@ esphome \
     -s user_sex "$USER_SEX" \
     compile "$CONFIG"
 
+[[ -f "$NATIVE_FIRMWARE" ]] && FIRMWARE="$NATIVE_FIRMWARE"
 if [[ ! -f "$FIRMWARE" ]]; then
     echo "Error: firmware not found at $FIRMWARE"
     exit 1

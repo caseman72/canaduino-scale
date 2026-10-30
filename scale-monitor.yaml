@@ -17,6 +17,8 @@ substitutions:
 esphome:
   name: scale-monitor
   friendly_name: Scale Monitor
+  includes:
+    - wifi_csi.h
 
 esp32:
   board: arduino_nano_esp32
@@ -24,12 +26,22 @@ esp32:
     type: esp-idf
     sdkconfig_options:
       CONFIG_LOG_COLORS: "n"
+      CONFIG_ESP_WIFI_CSI_ENABLED: "y"
 
 wifi:
   ssid: ${wifi_ssid}
   password: ${wifi_password}
   fast_connect: true
   reboot_timeout: 15min
+  # Mains-powered: no modem sleep, so the radio hears every AP frame (more CSI
+  # samples for presence), at full TX power.
+  power_save_mode: none
+  output_power: 20.5dB
+  # Desk presence: CSI from the AP's frames (see wifi_csi.h). Re-run on every
+  # connect so the BSSID filter follows roams.
+  on_connect:
+    - lambda: |-
+        if (!wifi_csi::start()) ESP_LOGW("csi", "CSI start failed");
 
 mqtt:
   broker: ${mqtt_broker}
@@ -120,6 +132,61 @@ script:
             - logger.log: "HR grace expired — disarming with no HR update"
             - lambda: id(capture_armed) = false;
             - script.execute: capture_done_indicator
+
+# Desk presence (WiFi CSI). 100 ms ticks match WiFi-Sense's scanIntervalMs.
+# Binary sensors dedupe, so MQTT only sees state changes.
+interval:
+  - interval: 100ms
+    then:
+      - lambda: |-
+          wifi_csi::detector.tick(id(csi_presence_th).state, id(csi_motion_th).state);
+          id(desk_presence).publish_state(wifi_csi::detector.presence);
+          id(desk_motion).publish_state(wifi_csi::detector.motion);
+
+# Thresholds on the CSI motion level, tunable from HA without reflashing.
+# Defaults from tuning with the board placed so the seat is between it and
+# the router: empty desk settles to 5–8, typing reads ~40.
+number:
+  - platform: template
+    name: "Presence Threshold"
+    id: csi_presence_th
+    min_value: 1
+    max_value: 500
+    step: 1
+    initial_value: 15
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    icon: "mdi:account-search"
+
+  - platform: template
+    name: "Motion Threshold"
+    id: csi_motion_th
+    min_value: 1
+    max_value: 500
+    step: 1
+    initial_value: 30
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    icon: "mdi:motion-sensor"
+
+binary_sensor:
+  - platform: template
+    name: "Desk Presence"
+    id: desk_presence
+    device_class: occupancy
+    # CSI only sees movement; sitting still dips below threshold for seconds
+    # at a time. Hold presence until 2 min of quiet.
+    filters:
+      - delayed_off: 2min
+
+  - platform: template
+    name: "Desk Motion"
+    id: desk_motion
+    device_class: motion
+    filters:
+      - delayed_off: 10s
 
 button:
   - platform: template
@@ -291,6 +358,17 @@ sensor:
     id: wifi_rssi
     update_interval: 67s
     icon: "mdi:wifi"
+
+  # CSI motion level (what the thresholds compare against) — watch this to tune.
+  # 31s: prime, co-prime with the 67s RSSI interval.
+  - platform: template
+    name: "CSI Motion Level"
+    id: csi_motion_level
+    lambda: 'return wifi_csi::detector.level;'
+    update_interval: 31s
+    accuracy_decimals: 0
+    state_class: measurement
+    icon: "mdi:waveform"
 
   # Scale readings — only publish when a capture is armed and a final frame
   # (status & 0x80) is decoded. Values persist between weigh-ins.

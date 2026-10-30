@@ -25,3 +25,7 @@ secrets.h
 *.jpeg
 *.png
 *.heic
+
+# Upstream reference projects (own git repos) for the CSI presence port
+WiFi-Sense/
+MotionDetector/
